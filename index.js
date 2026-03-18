@@ -1,6 +1,6 @@
 // PromptQM — prompt-qm
 
-const extensionName   = 'Quick-Prompt-Manager';
+const extensionName   = 'test';
 const GLOBAL_DUMMY_ID = 100001;
 const TG_KEY          = extensionName;
 
@@ -384,10 +384,11 @@ async function showAddToggleModal(gi) {
 
     const listHtml = prompts.map((p, idx) => {
         const ex = exists.has(p.identifier);
+        // Bug fix: use ?? for name
         return `<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;cursor:${ex ? 'default' : 'pointer'};opacity:${ex ? '0.45' : '1'}">
             <input type="checkbox" class="ptm-add-cb" data-i="${idx}" data-id="${p.identifier}" ${ex ? 'disabled checked' : ''}
-                style="width:16px;height:16px;min-width:16px;min-height:16px;margin:0;padding:0;flex-shrink:0;align-self:center;accent-color:#7a6fff;cursor:pointer;position:static;top:auto">
-            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.3">${p.name ?? ''}</span>
+                style="width:16px;height:16px;accent-color:#7a6fff;flex-shrink:0;cursor:pointer">
+            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name ?? ''}</span>
             ${ex ? '<span style="font-size:10px;padding:1px 5px;border-radius:8px;background:rgba(120,100,255,.25);color:#a89fff;flex-shrink:0">추가됨</span>' : ''}
         </label>`;
     }).join('');
@@ -402,62 +403,61 @@ async function showAddToggleModal(gi) {
         </div>
         <div id="ptm-mlist" style="max-height:45vh;overflow-y:auto">${listHtml}</div>`;
 
-    // Event delegation: listeners on document catch bubbled events regardless
-    // of when callGenericPopup injects the HTML — no MutationObserver needed.
-    let searchTimer = null;
-
-    const onInput = e => {
-        if (e.target.id !== 'ptm-msearch') return;
-        clearTimeout(searchTimer);
-        searchTimer = setTimeout(() => {
-            const q = e.target.value.toLowerCase();
-            document.querySelectorAll('#ptm-mlist label').forEach(el => {
-                el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
-            });
-        }, 120);
-    };
-
-    const onClick = e => {
-        const t = e.target;
-        if (t.id === 'ptm-mall') {
-            document.querySelectorAll('.ptm-add-cb:not(:disabled)').forEach(cb => {
-                cb.checked = true; selectedMap.set(+cb.dataset.i, cb.dataset.id);
-            });
-        } else if (t.id === 'ptm-mnone') {
-            document.querySelectorAll('.ptm-add-cb:not(:disabled)').forEach(cb => {
-                cb.checked = false; selectedMap.delete(+cb.dataset.i);
-            });
-        } else if (t.id === 'ptm-mrange') {
-            if (selectedMap.size < 2) { toastr.warning('시작과 끝 항목 2개를 선택하세요'); return; }
-            const idxs = [...selectedMap.keys()].sort((a, b) => a - b);
-            const mn = idxs[0], mx = idxs[idxs.length - 1];
-            document.querySelectorAll('.ptm-add-cb:not(:disabled)').forEach(cb => {
-                const i = +cb.dataset.i;
-                if (i >= mn && i <= mx) { cb.checked = true; selectedMap.set(i, cb.dataset.id); }
+    const observer = new MutationObserver(() => {
+        const search = document.getElementById('ptm-msearch');
+        if (search && !search._ptmWired) {
+            search._ptmWired = true;
+            search.addEventListener('input', e => {
+                const q = e.target.value.toLowerCase();
+                document.querySelectorAll('#ptm-mlist label').forEach(el => {
+                    el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
+                });
             });
         }
-    };
-
-    const onChange = e => {
-        const cb = e.target;
-        if (!cb.classList.contains('ptm-add-cb') || cb.disabled) return;
-        if (cb.checked) selectedMap.set(+cb.dataset.i, cb.dataset.id);
-        else selectedMap.delete(+cb.dataset.i);
-    };
-
-    document.addEventListener('input',  onInput,  true);
-    document.addEventListener('click',  onClick,  true);
-    document.addEventListener('change', onChange, true);
-
-    const cleanup = () => {
-        clearTimeout(searchTimer);
-        document.removeEventListener('input',  onInput,  true);
-        document.removeEventListener('click',  onClick,  true);
-        document.removeEventListener('change', onChange, true);
-    };
+        document.querySelectorAll('.ptm-add-cb:not(:disabled)').forEach(cb => {
+            if (cb._ptmWired) return;
+            cb._ptmWired = true;
+            cb.addEventListener('change', () => {
+                if (cb.checked) selectedMap.set(+cb.dataset.i, cb.dataset.id);
+                else selectedMap.delete(+cb.dataset.i);
+            });
+        });
+        const mallBtn = document.getElementById('ptm-mall');
+        if (mallBtn && !mallBtn._ptmWired) {
+            mallBtn._ptmWired = true;
+            mallBtn.addEventListener('click', () => {
+                document.querySelectorAll('.ptm-add-cb:not(:disabled)').forEach(cb => {
+                    cb.checked = true; selectedMap.set(+cb.dataset.i, cb.dataset.id);
+                });
+            });
+        }
+        const mnoneBtn = document.getElementById('ptm-mnone');
+        if (mnoneBtn && !mnoneBtn._ptmWired) {
+            mnoneBtn._ptmWired = true;
+            mnoneBtn.addEventListener('click', () => {
+                document.querySelectorAll('.ptm-add-cb:not(:disabled)').forEach(cb => {
+                    cb.checked = false; selectedMap.delete(+cb.dataset.i);
+                });
+            });
+        }
+        const mrangeBtn = document.getElementById('ptm-mrange');
+        if (mrangeBtn && !mrangeBtn._ptmWired) {
+            mrangeBtn._ptmWired = true;
+            mrangeBtn.addEventListener('click', () => {
+                if (selectedMap.size < 2) { toastr.warning('시작과 끝 항목 2개를 선택하세요'); return; }
+                const idxs = [...selectedMap.keys()].sort((a, b) => a - b);
+                const mn = idxs[0], mx = idxs[idxs.length - 1];
+                document.querySelectorAll('.ptm-add-cb:not(:disabled)').forEach(cb => {
+                    const i = +cb.dataset.i;
+                    if (i >= mn && i <= mx) { cb.checked = true; selectedMap.set(i, cb.dataset.id); }
+                });
+            });
+        }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
 
     const ok = await callGenericPopup(html, POPUP_TYPE.CONFIRM, '', { okButton: '추가', cancelButton: '취소' });
-    cleanup();
+    observer.disconnect();
 
     if (!ok) return;
     if (!selectedMap.size) { toastr.warning('추가할 항목을 선택하세요'); return; }
