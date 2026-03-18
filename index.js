@@ -191,17 +191,22 @@ function renderTGGroups() {
     const pn = getCurrentPreset();
     if (!pn) { area.innerHTML = '<div class="ptm-ph">프리셋이 선택되지 않았습니다</div>'; return; }
 
-    let validIds;
+    // Performance: call setupChatCompletionPromptManager ONCE, extract both
+    // validIds and allPrompts. Previously buildGroupCard called it again for
+    // every card (N+1 calls per render). Now it's always exactly 1 call.
+    let validIds, allPrompts;
     try {
         const pm = setupChatCompletionPromptManager(oai_settings);
         const order = (pm.serviceSettings?.prompt_order || [])
             .find(o => String(o.character_id) === String(GLOBAL_DUMMY_ID));
-        validIds = new Set((order?.order || []).map(e => e.identifier));
+        validIds   = new Set((order?.order || []).map(e => e.identifier));
+        allPrompts = pm.serviceSettings?.prompts || [];
     } catch(e) {
         const livePreset = getLivePresetData(pn) || openai_settings[openai_setting_names[pn]];
         const order = (livePreset?.prompt_order || [])
             .find(o => String(o.character_id) === String(GLOBAL_DUMMY_ID));
-        validIds = new Set((order?.order || []).map(e => e.identifier));
+        validIds   = new Set((order?.order || []).map(e => e.identifier));
+        allPrompts = livePreset?.prompts || [];
     }
     const groups = getGroupsForPreset(pn);
     let changed = false;
@@ -213,18 +218,19 @@ function renderTGGroups() {
     if (changed) saveGroups(pn, groups);
 
     if (!groups.length) { area.innerHTML = '<div class="ptm-ph">그룹이 없습니다</div>'; return; }
-    area.innerHTML = groups.map((g, gi) => buildGroupCard(g, gi, pn)).join('');
+    area.innerHTML = groups.map((g, gi) => buildGroupCard(g, gi, pn, allPrompts)).join('');
     wireGroupCards(area);
 }
 
-function buildGroupCard(g, gi, pn) {
-    let allPrompts;
-    try {
-        const pm = setupChatCompletionPromptManager(oai_settings);
-        allPrompts = pm.serviceSettings?.prompts || [];
-    } catch(e) {
-        const preset = getLivePresetData(pn) || openai_settings[openai_setting_names[pn]];
-        allPrompts = preset?.prompts || [];
+// allPrompts passed in from renderTGGroups — no extra manager call needed.
+// Fallback handles any future direct callers.
+function buildGroupCard(g, gi, pn, allPrompts) {
+    if (!allPrompts) {
+        try {
+            allPrompts = setupChatCompletionPromptManager(oai_settings).serviceSettings?.prompts || [];
+        } catch(e) {
+            allPrompts = (getLivePresetData(pn) || openai_settings[openai_setting_names[pn]])?.prompts || [];
+        }
     }
     const inToggleReorder = toggleReorderMode === gi;
 
@@ -379,10 +385,11 @@ async function showAddToggleModal(gi) {
     const listHtml = prompts.map((p, idx) => {
         const ex = exists.has(p.identifier);
         // Bug fix: use ?? for name
+        // Fix: explicit margin:0 + align-self:center on checkbox to neutralize ST global checkbox CSS
         return `<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;cursor:${ex ? 'default' : 'pointer'};opacity:${ex ? '0.45' : '1'}">
             <input type="checkbox" class="ptm-add-cb" data-i="${idx}" data-id="${p.identifier}" ${ex ? 'disabled checked' : ''}
-                style="width:16px;height:16px;accent-color:#7a6fff;flex-shrink:0;cursor:pointer">
-            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name ?? ''}</span>
+                style="width:16px;height:16px;min-width:16px;min-height:16px;margin:0;padding:0;flex-shrink:0;align-self:center;accent-color:#7a6fff;cursor:pointer;position:static;top:auto">
+            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.3">${p.name ?? ''}</span>
             ${ex ? '<span style="font-size:10px;padding:1px 5px;border-radius:8px;background:rgba(120,100,255,.25);color:#a89fff;flex-shrink:0">추가됨</span>' : ''}
         </label>`;
     }).join('');
@@ -397,61 +404,62 @@ async function showAddToggleModal(gi) {
         </div>
         <div id="ptm-mlist" style="max-height:45vh;overflow-y:auto">${listHtml}</div>`;
 
-    const observer = new MutationObserver(() => {
+    // Performance fix: replace MutationObserver(document.body) with polling.
+    // MutationObserver on body fires on every DOM change site-wide while the popup is open,
+    // causing heavy repeated querySelectorAll calls on every keystroke/interaction.
+    // We poll up to ~1s (20 × 50ms) to handle ST popups that inject HTML asynchronously.
+    let searchTimer = null;
+    function wireModal() {
         const search = document.getElementById('ptm-msearch');
-        if (search && !search._ptmWired) {
-            search._ptmWired = true;
-            search.addEventListener('input', e => {
-                const q = e.target.value.toLowerCase();
+        if (!search) {
+            if ((wireModal._attempts = (wireModal._attempts || 0) + 1) < 20) {
+                setTimeout(wireModal, 50);
+            }
+            return;
+        }
+        // Debounced search: filter only after user stops typing for 120ms.
+        // Use `search` directly (not e.target) to avoid any stale event-object issues.
+        search.addEventListener('input', () => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => {
+                const q = search.value.toLowerCase();
                 document.querySelectorAll('#ptm-mlist label').forEach(el => {
                     el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
                 });
-            });
-        }
+            }, 120);
+        });
+
         document.querySelectorAll('.ptm-add-cb:not(:disabled)').forEach(cb => {
-            if (cb._ptmWired) return;
-            cb._ptmWired = true;
             cb.addEventListener('change', () => {
                 if (cb.checked) selectedMap.set(+cb.dataset.i, cb.dataset.id);
                 else selectedMap.delete(+cb.dataset.i);
             });
         });
-        const mallBtn = document.getElementById('ptm-mall');
-        if (mallBtn && !mallBtn._ptmWired) {
-            mallBtn._ptmWired = true;
-            mallBtn.addEventListener('click', () => {
-                document.querySelectorAll('.ptm-add-cb:not(:disabled)').forEach(cb => {
-                    cb.checked = true; selectedMap.set(+cb.dataset.i, cb.dataset.id);
-                });
+
+        document.getElementById('ptm-mall')?.addEventListener('click', () => {
+            document.querySelectorAll('.ptm-add-cb:not(:disabled)').forEach(cb => {
+                cb.checked = true; selectedMap.set(+cb.dataset.i, cb.dataset.id);
             });
-        }
-        const mnoneBtn = document.getElementById('ptm-mnone');
-        if (mnoneBtn && !mnoneBtn._ptmWired) {
-            mnoneBtn._ptmWired = true;
-            mnoneBtn.addEventListener('click', () => {
-                document.querySelectorAll('.ptm-add-cb:not(:disabled)').forEach(cb => {
-                    cb.checked = false; selectedMap.delete(+cb.dataset.i);
-                });
+        });
+        document.getElementById('ptm-mnone')?.addEventListener('click', () => {
+            document.querySelectorAll('.ptm-add-cb:not(:disabled)').forEach(cb => {
+                cb.checked = false; selectedMap.delete(+cb.dataset.i);
             });
-        }
-        const mrangeBtn = document.getElementById('ptm-mrange');
-        if (mrangeBtn && !mrangeBtn._ptmWired) {
-            mrangeBtn._ptmWired = true;
-            mrangeBtn.addEventListener('click', () => {
-                if (selectedMap.size < 2) { toastr.warning('시작과 끝 항목 2개를 선택하세요'); return; }
-                const idxs = [...selectedMap.keys()].sort((a, b) => a - b);
-                const mn = idxs[0], mx = idxs[idxs.length - 1];
-                document.querySelectorAll('.ptm-add-cb:not(:disabled)').forEach(cb => {
-                    const i = +cb.dataset.i;
-                    if (i >= mn && i <= mx) { cb.checked = true; selectedMap.set(i, cb.dataset.id); }
-                });
+        });
+        document.getElementById('ptm-mrange')?.addEventListener('click', () => {
+            if (selectedMap.size < 2) { toastr.warning('시작과 끝 항목 2개를 선택하세요'); return; }
+            const idxs = [...selectedMap.keys()].sort((a, b) => a - b);
+            const mn = idxs[0], mx = idxs[idxs.length - 1];
+            document.querySelectorAll('.ptm-add-cb:not(:disabled)').forEach(cb => {
+                const i = +cb.dataset.i;
+                if (i >= mn && i <= mx) { cb.checked = true; selectedMap.set(i, cb.dataset.id); }
             });
-        }
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
+        });
+    }
+    setTimeout(wireModal, 50);
 
     const ok = await callGenericPopup(html, POPUP_TYPE.CONFIRM, '', { okButton: '추가', cancelButton: '취소' });
-    observer.disconnect();
+    clearTimeout(searchTimer);
 
     if (!ok) return;
     if (!selectedMap.size) { toastr.warning('추가할 항목을 선택하세요'); return; }
@@ -809,6 +817,7 @@ function wireTGReorder() {
     let ghostEl  = null;
     let rafId    = null;
     let pendingX = 0, pendingY = 0;
+    let highlightedRow = null; // Performance: track highlighted row directly
 
 
     function createGhost(row) {
@@ -845,10 +854,11 @@ function wireTGReorder() {
     }
 
     function highlightOver(ti) {
-        area.querySelectorAll('.ptm-trow').forEach(r => r.classList.remove('ptm-drag-over'));
+        // Performance: clear only the previously highlighted row (no querySelectorAll loop)
+        if (highlightedRow) { highlightedRow.classList.remove('ptm-drag-over'); highlightedRow = null; }
         if (ti == null) { dragOver = null; return; }
         const target = area.querySelector(`.ptm-trow[data-ti="${ti}"][data-gi="${dragSrc?.gi}"]`);
-        if (target) { target.classList.add('ptm-drag-over'); dragOver = ti; }
+        if (target) { target.classList.add('ptm-drag-over'); dragOver = ti; highlightedRow = target; }
     }
 
     function getRowAtPoint(x, y) {
@@ -876,6 +886,7 @@ function wireTGReorder() {
         }
         clearGhost();
         highlightOver(null);
+        highlightedRow = null;
         if (dragSrc.el) dragSrc.el.classList.remove('ptm-dragging');
         const fromTi = dragSrc.ti;
         const fromGi = dragSrc.gi;
