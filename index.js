@@ -384,7 +384,6 @@ async function showAddToggleModal(gi) {
 
     const listHtml = prompts.map((p, idx) => {
         const ex = exists.has(p.identifier);
-        // Bug fix: use ?? for name
         return `<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;cursor:${ex ? 'default' : 'pointer'};opacity:${ex ? '0.45' : '1'}">
             <input type="checkbox" class="ptm-add-cb" data-i="${idx}" data-id="${p.identifier}" ${ex ? 'disabled checked' : ''}
                 style="width:16px;height:16px;accent-color:#7a6fff;flex-shrink:0;cursor:pointer">
@@ -394,8 +393,6 @@ async function showAddToggleModal(gi) {
     }).join('');
 
     const html = `
-        <input type="text" id="ptm-msearch" placeholder="검색..."
-            style="width:100%;margin-bottom:6px;padding:6px 8px;border-radius:5px;border:1px solid #555;background:#222;color:#eee;box-sizing:border-box">
         <div style="display:flex;gap:6px;margin-bottom:8px">
             <button id="ptm-mall"   class="ptm-sm" style="margin:0">전체</button>
             <button id="ptm-mnone"  class="ptm-sm" style="margin:0">해제</button>
@@ -404,16 +401,6 @@ async function showAddToggleModal(gi) {
         <div id="ptm-mlist" style="max-height:45vh;overflow-y:auto">${listHtml}</div>`;
 
     const observer = new MutationObserver(() => {
-        const search = document.getElementById('ptm-msearch');
-        if (search && !search._ptmWired) {
-            search._ptmWired = true;
-            search.addEventListener('input', e => {
-                const q = e.target.value.toLowerCase();
-                document.querySelectorAll('#ptm-mlist label').forEach(el => {
-                    el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
-                });
-            });
-        }
         document.querySelectorAll('.ptm-add-cb:not(:disabled)').forEach(cb => {
             if (cb._ptmWired) return;
             cb._ptmWired = true;
