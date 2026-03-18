@@ -402,49 +402,32 @@ async function showAddToggleModal(gi) {
         </div>
         <div id="ptm-mlist" style="max-height:45vh;overflow-y:auto">${listHtml}</div>`;
 
-    // MutationObserver: fires exactly when callGenericPopup injects the HTML into the DOM.
-    // Performance fix: call observer.disconnect() immediately once all elements are wired,
-    // so it never fires again for unrelated DOM mutations (previously it kept running the
-    // whole time the popup was open, re-running querySelectorAll on every DOM change).
-    const observer = new MutationObserver(() => {
-        const search   = document.getElementById('ptm-msearch');
-        const mallBtn  = document.getElementById('ptm-mall');
-        const mnoneBtn = document.getElementById('ptm-mnone');
-        const mrangeBtn = document.getElementById('ptm-mrange');
-        const cbs = document.querySelectorAll('.ptm-add-cb');
+    // Event delegation: listeners on document catch bubbled events regardless
+    // of when callGenericPopup injects the HTML — no MutationObserver needed.
+    let searchTimer = null;
 
-        // Not yet injected — wait for next mutation
-        if (!search || !mallBtn) return;
-
-        // All elements found: wire once, then STOP observing immediately
-        observer.disconnect();
-
-        search.addEventListener('input', e => {
+    const onInput = e => {
+        if (e.target.id !== 'ptm-msearch') return;
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => {
             const q = e.target.value.toLowerCase();
             document.querySelectorAll('#ptm-mlist label').forEach(el => {
                 el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
             });
-        });
+        }, 120);
+    };
 
-        cbs.forEach(cb => {
-            if (cb.disabled) return;
-            cb.addEventListener('change', () => {
-                if (cb.checked) selectedMap.set(+cb.dataset.i, cb.dataset.id);
-                else selectedMap.delete(+cb.dataset.i);
-            });
-        });
-
-        mallBtn.addEventListener('click', () => {
+    const onClick = e => {
+        const t = e.target;
+        if (t.id === 'ptm-mall') {
             document.querySelectorAll('.ptm-add-cb:not(:disabled)').forEach(cb => {
                 cb.checked = true; selectedMap.set(+cb.dataset.i, cb.dataset.id);
             });
-        });
-        mnoneBtn.addEventListener('click', () => {
+        } else if (t.id === 'ptm-mnone') {
             document.querySelectorAll('.ptm-add-cb:not(:disabled)').forEach(cb => {
                 cb.checked = false; selectedMap.delete(+cb.dataset.i);
             });
-        });
-        mrangeBtn.addEventListener('click', () => {
+        } else if (t.id === 'ptm-mrange') {
             if (selectedMap.size < 2) { toastr.warning('시작과 끝 항목 2개를 선택하세요'); return; }
             const idxs = [...selectedMap.keys()].sort((a, b) => a - b);
             const mn = idxs[0], mx = idxs[idxs.length - 1];
@@ -452,12 +435,29 @@ async function showAddToggleModal(gi) {
                 const i = +cb.dataset.i;
                 if (i >= mn && i <= mx) { cb.checked = true; selectedMap.set(i, cb.dataset.id); }
             });
-        });
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
+        }
+    };
+
+    const onChange = e => {
+        const cb = e.target;
+        if (!cb.classList.contains('ptm-add-cb') || cb.disabled) return;
+        if (cb.checked) selectedMap.set(+cb.dataset.i, cb.dataset.id);
+        else selectedMap.delete(+cb.dataset.i);
+    };
+
+    document.addEventListener('input',  onInput);
+    document.addEventListener('click',  onClick);
+    document.addEventListener('change', onChange);
+
+    const cleanup = () => {
+        clearTimeout(searchTimer);
+        document.removeEventListener('input',  onInput);
+        document.removeEventListener('click',  onClick);
+        document.removeEventListener('change', onChange);
+    };
 
     const ok = await callGenericPopup(html, POPUP_TYPE.CONFIRM, '', { okButton: '추가', cancelButton: '취소' });
-    observer.disconnect(); // safety: already disconnected above, but ensure cleanup on close
+    cleanup();
 
     if (!ok) return;
     if (!selectedMap.size) { toastr.warning('추가할 항목을 선택하세요'); return; }
