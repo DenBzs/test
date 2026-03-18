@@ -967,6 +967,51 @@ let ppcGroupsExpanded = false;
 let ppcBtn            = null;
 let ppcSubGi          = null;
 
+
+// ══════════════════════════════════════════
+// ST Panel opener
+// ══════════════════════════════════════════
+
+function openStPanel(type) {
+    try {
+        if (type === 'profile') {
+            // 커넥션 프로필 패널: #connection-profile-block 또는 API 버튼 클릭
+            const profileBlock = document.querySelector('#connection-profile-block');
+            if (profileBlock) {
+                const drawer = profileBlock.closest('.inline-drawer');
+                if (drawer) {
+                    const toggle = drawer.querySelector('.inline-drawer-toggle');
+                    const content = drawer.querySelector('.inline-drawer-content');
+                    if (content && content.style.display === 'none') toggle?.click();
+                }
+                profileBlock.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+            // fallback: api 버튼
+            document.querySelector('#api_button, #api-settings-button, [data-tab="api"]')?.click();
+        } else if (type === 'preset') {
+            // 프리셋 선택 드롭다운이 있는 블록으로 스크롤
+            const presetSelect = document.querySelector('#settings_preset, #preset_name_select, select[name="preset_name"]');
+            if (presetSelect) {
+                const block = presetSelect.closest('.range-block, .inline-drawer, .flex-container') || presetSelect.parentElement;
+                const drawer = presetSelect.closest('.inline-drawer');
+                if (drawer) {
+                    const toggle = drawer.querySelector('.inline-drawer-toggle');
+                    const content = drawer.querySelector('.inline-drawer-content');
+                    if (content && content.style.display === 'none') toggle?.click();
+                }
+                presetSelect.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // 잠깐 하이라이트
+                presetSelect.style.outline = '2px solid rgba(160,144,232,0.7)';
+                setTimeout(() => presetSelect.style.outline = '', 1500);
+                return;
+            }
+        }
+    } catch(e) {
+        console.warn(`[${extensionName}] openStPanel failed:`, e);
+    }
+}
+
 function escapeHtml(str) {
     return String(str)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -1077,13 +1122,30 @@ async function openPpcPopup() {
     // Upper: profile + preset (static until refreshed)
     const preset  = escapeHtml(getCurrentPresetName());
     const profile = escapeHtml(await getCurrentProfileName());
-    popup.querySelector('#ppc-upper').innerHTML = `
-        <div style="display:flex;align-items:center;gap:8px;">
+    const upper = popup.querySelector('#ppc-upper');
+    upper.innerHTML = `
+        <div id="ppc-profile-row" style="display:flex;align-items:center;gap:8px;cursor:pointer;border-radius:5px;padding:2px 4px;margin:-2px -4px;transition:background 0.12s;">
             <span>🤖</span><span style="font-weight:500">${profile}</span>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;margin-top:2px;">
+        <div id="ppc-preset-row" style="display:flex;align-items:center;gap:8px;margin-top:4px;cursor:pointer;border-radius:5px;padding:2px 4px;margin-left:-4px;margin-right:-4px;transition:background 0.12s;">
             <span>📋</span><span style="font-weight:500">${preset}</span>
         </div>`;
+    // Wire profile row click
+    upper.querySelector('#ppc-profile-row')?.addEventListener('click', e => {
+        e.stopPropagation();
+        closePpcPopup();
+        openStPanel('profile');
+    });
+    upper.querySelector('#ppc-preset-row')?.addEventListener('click', e => {
+        e.stopPropagation();
+        closePpcPopup();
+        openStPanel('preset');
+    });
+    // Hover effect
+    upper.querySelectorAll('#ppc-profile-row, #ppc-preset-row').forEach(row => {
+        row.addEventListener('mouseenter', () => row.style.background = 'rgba(128,128,128,0.12)');
+        row.addEventListener('mouseleave', () => row.style.background = '');
+    });
     // Lower: groups section
     renderPpcLower();
     popup.style.display = 'block';
@@ -1469,13 +1531,21 @@ function setupPpcEvents() {
             const preset  = escapeHtml(getCurrentPresetName());
             const profile = escapeHtml(await getCurrentProfileName());
             const upper = popup.querySelector('#ppc-upper');
-            if (upper) upper.innerHTML = `
-                <div style="display:flex;align-items:center;gap:8px;">
-                    <span>🤖</span><span style="font-weight:500">${profile}</span>
-                </div>
-                <div style="display:flex;align-items:center;gap:8px;margin-top:2px;">
-                    <span>📋</span><span style="font-weight:500">${preset}</span>
-                </div>`;
+            if (upper) {
+                upper.innerHTML = `
+                    <div id="ppc-profile-row" style="display:flex;align-items:center;gap:8px;cursor:pointer;border-radius:5px;padding:2px 4px;margin:-2px -4px;transition:background 0.12s;">
+                        <span>🤖</span><span style="font-weight:500">${profile}</span>
+                    </div>
+                    <div id="ppc-preset-row" style="display:flex;align-items:center;gap:8px;margin-top:4px;cursor:pointer;border-radius:5px;padding:2px 4px;margin-left:-4px;margin-right:-4px;transition:background 0.12s;">
+                        <span>📋</span><span style="font-weight:500">${preset}</span>
+                    </div>`;
+                upper.querySelector('#ppc-profile-row')?.addEventListener('click', e => { e.stopPropagation(); closePpcPopup(); openStPanel('profile'); });
+                upper.querySelector('#ppc-preset-row')?.addEventListener('click',  e => { e.stopPropagation(); closePpcPopup(); openStPanel('preset');  });
+                upper.querySelectorAll('#ppc-profile-row, #ppc-preset-row').forEach(row => {
+                    row.addEventListener('mouseenter', () => row.style.background = 'rgba(128,128,128,0.12)');
+                    row.addEventListener('mouseleave', () => row.style.background = '');
+                });
+            }
             renderPpcLower();
             if (ppcBtn) requestAnimationFrame(() => positionPpcPopup(popup, ppcBtn));
         });
