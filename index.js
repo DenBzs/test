@@ -1,6 +1,6 @@
 // PromptQM — prompt-qm
 
-const extensionName   = 'test';
+const extensionName   = 'Quick-Prompt-Manager';
 const GLOBAL_DUMMY_ID = 100001;
 const TG_KEY          = extensionName;
 
@@ -445,15 +445,15 @@ async function showAddToggleModal(gi) {
         else selectedMap.delete(+cb.dataset.i);
     };
 
-    document.addEventListener('input',  onInput);
-    document.addEventListener('click',  onClick);
-    document.addEventListener('change', onChange);
+    document.addEventListener('input',  onInput,  true);
+    document.addEventListener('click',  onClick,  true);
+    document.addEventListener('change', onChange, true);
 
     const cleanup = () => {
         clearTimeout(searchTimer);
-        document.removeEventListener('input',  onInput);
-        document.removeEventListener('click',  onClick);
-        document.removeEventListener('change', onChange);
+        document.removeEventListener('input',  onInput,  true);
+        document.removeEventListener('click',  onClick,  true);
+        document.removeEventListener('change', onChange, true);
     };
 
     const ok = await callGenericPopup(html, POPUP_TYPE.CONFIRM, '', { okButton: '추가', cancelButton: '취소' });
