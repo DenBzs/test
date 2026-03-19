@@ -385,8 +385,10 @@ async function showAddToggleModal(gi) {
 
     const listHtml = prompts.map((p, idx) => {
         const ex = exists.has(p.identifier);
-        // 체크박스에 margin: 0; 을 추가하여 텍스트와의 수직 정렬을 맞춤
-        return `<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;cursor:${ex ? 'default' : 'pointer'};opacity:${ex ? '0.45' : '1'}">
+        // 성능 최적화: 검색용 텍스트를 미리 소문자로 변환하여 HTML 속성(data-search)에 저장
+        const searchText = (p.name ?? '').toLowerCase().replace(/"/g, '&quot;');
+        
+        return `<label data-search="${searchText}" style="display:flex;align-items:center;gap:8px;padding:7px 4px;cursor:${ex ? 'default' : 'pointer'};opacity:${ex ? '0.45' : '1'}">
             <input type="checkbox" class="ptm-add-cb" data-i="${idx}" data-id="${p.identifier}" ${ex ? 'disabled checked' : ''}
                 style="margin:0;width:16px;height:16px;accent-color:#7a6fff;flex-shrink:0;cursor:pointer">
             <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name ?? ''}</span>
@@ -409,29 +411,30 @@ async function showAddToggleModal(gi) {
         if (search && !search._ptmWired) {
             search._ptmWired = true;
             
-            // 검색 성능 최적화: 디바운스 타이머 및 텍스트 캐싱
             let debounceTimer;
-            let cachedLabels = [];
-            let cachedTexts = [];
-
+            // 모달창이 열릴 때 라벨 요소들을 한 번만 미리 찾아둡니다 (DOM 탐색 부하 제거)
+            const labels = Array.from(document.querySelectorAll('#ptm-mlist label'));
+            
             search.addEventListener('input', e => {
                 clearTimeout(debounceTimer);
                 const q = e.target.value.toLowerCase();
                 
-                // 타이핑 멈춤 0.2초 후 1번만 실행
                 debounceTimer = setTimeout(() => {
-                    // 최초 검색 시에만 DOM 요소를 읽어와서 메모리에 저장 (부하 대폭 감소)
-                    if (cachedLabels.length === 0) {
-                        cachedLabels = Array.from(document.querySelectorAll('#ptm-mlist label'));
-                        cachedTexts = cachedLabels.map(el => el.textContent.toLowerCase());
+                    for (let i = 0; i < labels.length; i++) {
+                        const el = labels[i];
+                        const text = el.getAttribute('data-search') || '';
+                        
+                        // 핵심 버그 픽스: '' 대신 원래의 'flex' 속성을 부여해야 레이아웃이 깨지지 않음
+                        if (text.includes(q)) {
+                            el.style.display = 'flex'; 
+                        } else {
+                            el.style.display = 'none';
+                        }
                     }
-                    
-                    cachedLabels.forEach((el, index) => {
-                        el.style.display = cachedTexts[index].includes(q) ? '' : 'none';
-                    });
-                }, 200); 
+                }, 150); // 0.15초 디바운스 적용
             });
         }
+        
         document.querySelectorAll('.ptm-add-cb:not(:disabled)').forEach(cb => {
             if (cb._ptmWired) return;
             cb._ptmWired = true;
