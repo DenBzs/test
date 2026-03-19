@@ -374,6 +374,7 @@ function wireGroupCards(area) {
     }));
 }
 
+
 // ── Add toggle modal ──────────────────────────────────────────────────────────
 async function showAddToggleModal(gi) {
     const pn = getCurrentPreset(), preset = openai_settings[openai_setting_names[pn]];
@@ -384,15 +385,18 @@ async function showAddToggleModal(gi) {
 
     const listHtml = prompts.map((p, idx) => {
         const ex = exists.has(p.identifier);
+        // 체크박스에 margin: 0; 을 추가하여 텍스트와의 수직 정렬을 맞춤
         return `<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;cursor:${ex ? 'default' : 'pointer'};opacity:${ex ? '0.45' : '1'}">
             <input type="checkbox" class="ptm-add-cb" data-i="${idx}" data-id="${p.identifier}" ${ex ? 'disabled checked' : ''}
-                style="width:16px;height:16px;accent-color:#7a6fff;flex-shrink:0;cursor:pointer">
+                style="margin:0;width:16px;height:16px;accent-color:#7a6fff;flex-shrink:0;cursor:pointer">
             <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name ?? ''}</span>
             ${ex ? '<span style="font-size:10px;padding:1px 5px;border-radius:8px;background:rgba(120,100,255,.25);color:#a89fff;flex-shrink:0">추가됨</span>' : ''}
         </label>`;
     }).join('');
 
     const html = `
+        <input type="text" id="ptm-msearch" placeholder="검색..."
+            style="width:100%;margin-bottom:6px;padding:6px 8px;border-radius:5px;border:1px solid #555;background:#222;color:#eee;box-sizing:border-box">
         <div style="display:flex;gap:6px;margin-bottom:8px">
             <button id="ptm-mall"   class="ptm-sm" style="margin:0">전체</button>
             <button id="ptm-mnone"  class="ptm-sm" style="margin:0">해제</button>
@@ -401,6 +405,33 @@ async function showAddToggleModal(gi) {
         <div id="ptm-mlist" style="max-height:45vh;overflow-y:auto">${listHtml}</div>`;
 
     const observer = new MutationObserver(() => {
+        const search = document.getElementById('ptm-msearch');
+        if (search && !search._ptmWired) {
+            search._ptmWired = true;
+            
+            // 검색 성능 최적화: 디바운스 타이머 및 텍스트 캐싱
+            let debounceTimer;
+            let cachedLabels = [];
+            let cachedTexts = [];
+
+            search.addEventListener('input', e => {
+                clearTimeout(debounceTimer);
+                const q = e.target.value.toLowerCase();
+                
+                // 타이핑 멈춤 0.2초 후 1번만 실행
+                debounceTimer = setTimeout(() => {
+                    // 최초 검색 시에만 DOM 요소를 읽어와서 메모리에 저장 (부하 대폭 감소)
+                    if (cachedLabels.length === 0) {
+                        cachedLabels = Array.from(document.querySelectorAll('#ptm-mlist label'));
+                        cachedTexts = cachedLabels.map(el => el.textContent.toLowerCase());
+                    }
+                    
+                    cachedLabels.forEach((el, index) => {
+                        el.style.display = cachedTexts[index].includes(q) ? '' : 'none';
+                    });
+                }, 200); 
+            });
+        }
         document.querySelectorAll('.ptm-add-cb:not(:disabled)').forEach(cb => {
             if (cb._ptmWired) return;
             cb._ptmWired = true;
@@ -453,6 +484,7 @@ async function showAddToggleModal(gi) {
     saveGroups(pn, gs2); renderTGGroups();
     toastr.success(`${selectedMap.size}개 추가됨`);
 }
+
 
 // ══════════════════════════════════════════
 // D. Mover helpers
