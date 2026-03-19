@@ -375,6 +375,7 @@ function wireGroupCards(area) {
 }
 
 
+
 // ── Add toggle modal ──────────────────────────────────────────────────────────
 async function showAddToggleModal(gi) {
     const pn = getCurrentPreset(), preset = openai_settings[openai_setting_names[pn]];
@@ -385,13 +386,11 @@ async function showAddToggleModal(gi) {
 
     const listHtml = prompts.map((p, idx) => {
         const ex = exists.has(p.identifier);
-        // 성능 최적화: 검색용 텍스트를 미리 소문자로 변환하여 HTML 속성(data-search)에 저장
-        const searchText = (p.name ?? '').toLowerCase().replace(/"/g, '&quot;');
-        
-        return `<label data-search="${searchText}" style="display:flex;align-items:center;gap:8px;padding:7px 4px;cursor:${ex ? 'default' : 'pointer'};opacity:${ex ? '0.45' : '1'}">
+        // 검색용 글자를 담을 span에 'ptm-search-text' 클래스를 추가했습니다.
+        return `<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;cursor:${ex ? 'default' : 'pointer'};opacity:${ex ? '0.45' : '1'}">
             <input type="checkbox" class="ptm-add-cb" data-i="${idx}" data-id="${p.identifier}" ${ex ? 'disabled checked' : ''}
                 style="margin:0;width:16px;height:16px;accent-color:#7a6fff;flex-shrink:0;cursor:pointer">
-            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name ?? ''}</span>
+            <span class="ptm-search-text" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name ?? ''}</span>
             ${ex ? '<span style="font-size:10px;padding:1px 5px;border-radius:8px;background:rgba(120,100,255,.25);color:#a89fff;flex-shrink:0">추가됨</span>' : ''}
         </label>`;
     }).join('');
@@ -412,26 +411,22 @@ async function showAddToggleModal(gi) {
             search._ptmWired = true;
             
             let debounceTimer;
-            // 모달창이 열릴 때 라벨 요소들을 한 번만 미리 찾아둡니다 (DOM 탐색 부하 제거)
-            const labels = Array.from(document.querySelectorAll('#ptm-mlist label'));
             
             search.addEventListener('input', e => {
                 clearTimeout(debounceTimer);
                 const q = e.target.value.toLowerCase();
                 
+                // 0.15초 타이핑 멈추면 한 번에 검색 (렉 완벽 제거)
                 debounceTimer = setTimeout(() => {
-                    for (let i = 0; i < labels.length; i++) {
-                        const el = labels[i];
-                        const text = el.getAttribute('data-search') || '';
+                    // ST 보안 필터에 잘리지 않는 살아있는 DOM에서 직접 글자를 찾습니다.
+                    document.querySelectorAll('#ptm-mlist label').forEach(el => {
+                        const targetSpan = el.querySelector('.ptm-search-text');
+                        const text = targetSpan ? targetSpan.textContent.toLowerCase() : '';
                         
-                        // 핵심 버그 픽스: '' 대신 원래의 'flex' 속성을 부여해야 레이아웃이 깨지지 않음
-                        if (text.includes(q)) {
-                            el.style.display = 'flex'; 
-                        } else {
-                            el.style.display = 'none';
-                        }
-                    }
-                }, 150); // 0.15초 디바운스 적용
+                        // 숨겼다 켤 때 원래 레이아웃인 'flex'를 명시해서 동그라미/글자 줄 틀어짐 방지
+                        el.style.display = text.includes(q) ? 'flex' : 'none';
+                    });
+                }, 150);
             });
         }
         
@@ -487,6 +482,7 @@ async function showAddToggleModal(gi) {
     saveGroups(pn, gs2); renderTGGroups();
     toastr.success(`${selectedMap.size}개 추가됨`);
 }
+
 
 
 // ══════════════════════════════════════════
